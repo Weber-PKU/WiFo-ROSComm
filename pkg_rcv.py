@@ -1,93 +1,66 @@
 #!/usr/bin/env python3
 # pkg_rcv.py
-# Python client module: connects to server B, receives (seq, array) tuples,
-# unpacks into seq and tensor, and logs receive & unpack latencies.
+# TCP client: receive processed I/Q back from wifo_.py, unpack [len|timestamp|seq], log latencies.
 
 import socket
 import time
-# import pickle  # no longer used
-# import torch
+import struct
 import numpy as np
 import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='TCP client for receiving seq and array from pkg_trans_ros'
+        description='TCP client receiving I/Q from wifo server'
     )
     parser.add_argument('--host', '-H', type=str, default='127.0.0.1',
-                        help='Server host to connect to (default: 127.0.0.1)')
+                        help='Server host (default: 127.0.0.1)')
     parser.add_argument('--port', '-p', type=int, default=8001,
-                        help='Server port to connect to (default: 8001)')
+                        help='Server port (default: 8001)')
     return parser.parse_args()
 
-def recv_all(sock, length):
-    """
-    English comment: receive exactly `length` bytes or return None if connection closed.
-    """
+def recv_all(sock, nbytes):
     buf = bytearray()
-    while len(buf) < length:
-        packet = sock.recv(length - len(buf))
+    while len(buf) < nbytes:
+        packet = sock.recv(nbytes - len(buf))
         if not packet:
             return None
         buf.extend(packet)
     return bytes(buf)
 
 def pkg_rcv(server_host: str, server_port: int):
-    """
-    Connects to server B over TCP, performs handshake, then continuously
-    receives (seq, array) tuples, unpacks into seq and tensor, and logs:
-      - Step1: receive latency (header+payload)
-      - Step2: unpack & tensor conversion latency
-    """
-    # create and connect socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((server_host, server_port))
     print(f"[{time.time():.4f}] Connected to {server_host}:{server_port}")
 
-    # handshake: expect 'ACK'
-    ack = sock.recv(3)
-    if ack == b'ACK':
-        print(f"[{time.time():.4f}] Handshake successful: received ACK")
-    else:
-        print(f"[{time.time():.4f}] Handshake warning: expected ACK but got {ack!r}")
-
     try:
         while True:
-            # Step1: receive header+payload
-            header = recv_all(sock, 4)
-            if header is None:
-                print(f"[{time.time():.4f}] Step1: connection closed")
+            hdr = recv_all(sock, 4)
+            if not hdr:
                 break
-            length = int.from_bytes(header, byteorder='big')
-            
+            payload_len = int.from_bytes(hdr, 'big')
+
+            ts_bytes = recv_all(sock, 8)
+            seq_bytes = recv_all(sock, 2)
             t1_start = time.time()
-            payload = recv_all(sock, length)
+            raw = recv_all(sock, payload_len)
             t1_end = time.time()
-            if payload is None:
-                print(f"[{time.time():.4f}] Step1: payload truncated")
+            if raw is None:
                 break
 
+            timestamp = struct.unpack('>d', ts_bytes)[0]
+            seq = int.from_bytes(seq_bytes, 'big')
             latency1 = (t1_end - t1_start) * 1000.0
-            print(f"[{t1_end:.4f}] Seq=Unknown, Step1: recv complete, latency={latency1:.3f} ms")
+            print(f"[{t1_end:.4f}] Seq={seq}, Step1 recv latency={latency1:.3f} ms, timestamp={timestamp:.6f}")
 
-            # Step2: unpack without pickle
+            # Step2: unpack I/Q
             t2_start = time.time()
-            # Extract sequence number
-            seq = int.from_bytes(payload[:4], byteorder='big')
-            # Convert remaining bytes directly to tensor
-            # buf = bytearray(payload[4:])               # make writable buffer
-            # tensor = torch.frombuffer(buf, dtype=torch.float32)
-            
-            buf = payload[4:]
-            array = np.frombuffer(buf, dtype=np.float32)
-
+            arr = np.frombuffer(raw, dtype=np.int16)
             t2_end = time.time()
             latency2 = (t2_end - t2_start) * 1000.0
-
-            print(f"[{t2_end:.4f}] Seq={seq}, Step2: unpack complete, latency={latency2:.3f} ms")
+            print(f"[{t2_end:.4f}] Seq={seq}, Step2 unpack latency={latency2:.3f} ms, samples={len(arr)//2}")
 
     except KeyboardInterrupt:
-        print(f"[{time.time():.4f}] Shutting down pkg_rcv client")
+        print(f"[{time.time():.4f}] Shutting down pkg_rcv")
     finally:
         sock.close()
 
