@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # wifo_.py
-# ROS node: receive I/Q packet, run wifo inference, send back with same [len|timestamp|seq] header.
+# ROS node: receive I/Q packet, run wifo inference, send back with same [len|timestamp|seq] header,
+# plus publish I/Q + seq + timestamp as VizPack msg for visualization.
 
 import socket
 import threading
@@ -10,6 +11,8 @@ import argparse
 
 import numpy as np
 import rospy
+from std_msgs.msg import Header
+from wifo_processor.msg import VizPack  # custom message
 
 import model_wifo.trt10 as wifo
 
@@ -29,7 +32,15 @@ def parse_args():
 
 class MergedNode:
     def __init__(self, in_host, in_port, out_host, out_port):
+        # initialize ROS node
         rospy.init_node('merged_wifo_node', anonymous=False)
+
+        # Publisher for visualization data
+        self._iq_pub = rospy.Publisher(
+            '/wifo/iq_visual', VizPack, queue_size=10
+        )
+
+        # thread synchronization
         self._lock = threading.Lock()
         self._event = threading.Event()
         self._last_ts = None
@@ -54,6 +65,7 @@ class MergedNode:
         self._out_conn, _ = self._out_sock.accept()
         print(f"[{time.time():.4f}] Outgoing connection established")
 
+        # start threads
         threading.Thread(target=self._recv_loop, daemon=True).start()
         threading.Thread(target=self._proc_loop, daemon=True).start()
 
@@ -97,7 +109,7 @@ class MergedNode:
             print(f"[{t_end:.4f}] Seq={seq}, Step1 recv latency={latency:.3f} ms")
 
     def _proc_loop(self):
-        """On new data, run wifo inference and send back with same header fields."""
+        """On new data, run inference, send back, and publish for RViz."""
         while not rospy.is_shutdown():
             self._event.wait()
             self._event.clear()
@@ -107,16 +119,25 @@ class MergedNode:
                 seq = self._last_seq
                 raw = self._last_payload
 
-            # Step2: unpack I/Q int16 and reshape
+            # Step2: unpack I/Q int16
             t2 = time.time()
-            arr = np.frombuffer(raw, dtype=np.int16)
-            arr = arr.reshape((1, 2, 24, 4, 128)).astype(np.float32)  # match model input
+            arr = np.frombuffer(raw, dtype=np.int16)  # shape: [2*N]
             wait_latency = (t2 - timestamp) * 1000.0
             print(f"[{t2:.4f}] Seq={seq}, Step2 wait latency={wait_latency:.3f} ms")
 
+            # publish for RViz
+            msg = VizPack()
+            # use original timestamp
+            msg.header = Header(stamp=rospy.Time.from_sec(timestamp), frame_id='wifo_iq')
+            msg.seq = seq
+            msg.data_IQ = arr.tolist()
+            self._iq_pub.publish(msg)
+
             # Step3: inference
             t3_start = time.time()
-            result = wifo.model_infer(arr)
+            # reshape before model: (1,2,24,4,128)
+            input_arr = arr.reshape((1,2,24,4,128)).astype(np.float32)
+            result = wifo.model_infer(input_arr)
             t3_end = time.time()
             proc_latency = (t3_end - t3_start) * 1000.0
             print(f"[{t3_end:.4f}] Seq={seq}, Step3 proc latency={proc_latency:.3f} ms")

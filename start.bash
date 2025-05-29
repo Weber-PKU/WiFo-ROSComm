@@ -1,4 +1,4 @@
-cd ~/wifo_ros || exit
+# cd ~/wifo_ros/ || exit
 
 chmod -R a+rwx .
 
@@ -10,7 +10,7 @@ source devel/setup.bash
 
 gnome-terminal --title="ROS Core" -- bash -c "source devel/setup.bash; roscore"
 
-# gnome-terminal --title="RQT Graph" -- bash -c "source devel/setup.bash; rqt_graph"
+gnome-terminal --title="RQT Graph" -- bash -c "source devel/setup.bash; rqt_graph"
 
 gnome-terminal --title="RQT Topic" -- bash -c "source devel/setup.bash; rqt_topic"
 
@@ -26,3 +26,9 @@ sleep 2
 gnome-terminal --title="1 TRANS" -- bash -c "conda activate ros; python3 pkg_trans.py --host 0.0.0.0 --port 12345; exec bash"
 
 gnome-terminal --title="5 RCV" -- bash -c "conda activate ros; python3 pkg_rcv.py --host 0.0.0.0 --port 12346; exec bash"
+
+gnome-terminal --title="Viz" -- bash -c "source devel/setup.bash; rosrun wifo_processor rviz_pub.py; exec bash"
+
+
+
+
