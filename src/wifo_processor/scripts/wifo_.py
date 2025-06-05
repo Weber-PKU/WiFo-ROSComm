@@ -100,13 +100,19 @@ class MergedNode:
             seq = int.from_bytes(seq_bytes, 'big')
             latency = (t_end - t_start) * 1000.0
 
+            # Calculate N (number of I/Q pairs) and packet size
+            # Each I/Q pair consumes 4 bytes (2 bytes I + 2 bytes Q)
+            N = payload_len // 4
+            packet_size = payload_len + 4 + 8 + 4  # payload + Length(4B) + Timestamp(8B) + Seq(4B)
+
+            print(f"[{t_end:.4f}] Received packet: N={N}, Timestamp={timestamp:.6f}, PacketSize={packet_size} bytes")
+            print(f"[{t_end:.4f}] Seq={seq}, Step1 recv latency={latency:.3f} ms")
+
             with self._lock:
                 self._last_ts = timestamp
                 self._last_seq = seq
                 self._last_payload = raw
             self._event.set()
-
-            print(f"[{t_end:.4f}] Seq={seq}, Step1 recv latency={latency:.3f} ms")
 
     def _proc_loop(self):
         """On new data, run inference, send back, and publish for RViz."""
@@ -136,7 +142,7 @@ class MergedNode:
             # Step3: inference
             t3_start = time.time()
             # reshape before model: (1,2,24,4,128)
-            input_arr = arr.reshape((1,2,24,4,128)).astype(np.float32)
+            input_arr = arr.reshape(INPUT_SHAPE).astype(np.float32)
             result = wifo.model_infer(input_arr)
             t3_end = time.time()
             proc_latency = (t3_end - t3_start) * 1000.0
@@ -146,9 +152,18 @@ class MergedNode:
             t4_start = time.time()
             res_raw = result.astype(np.int16).tobytes()
             length_bytes = len(res_raw).to_bytes(4, 'big')
-            ts_bytes = struct.pack('>d', timestamp) # 4-byte uint32
-            seq_bytes = struct.pack('>I', seq)
+            ts_bytes = struct.pack('>d', timestamp)  # 8-byte float64
+            seq_bytes = struct.pack('>I', seq)       # 4-byte uint32
+
+            # Calculate send packet size
+            send_packet_size = len(length_bytes) + len(ts_bytes) + len(seq_bytes) + len(res_raw)
+            print(f"[{t4_start:.4f}] Sending packet: Timestamp={timestamp:.6f}, PacketSize={send_packet_size} bytes")
+
             self._out_conn.sendall(length_bytes + ts_bytes + seq_bytes + res_raw)
+            '''
+            Length (uint32) + Timestamp (float64) + Seq (uint32) + Payload (I/Q) (int16)
+            Payload: [I0, Q0, I1, Q1, …] 
+            ''' 
             t4_end = time.time()
             send_latency = (t4_end - t4_start) * 1000.0
             print(f"[{t4_end:.4f}] Seq={seq}, Step4 send latency={send_latency:.3f} ms")
