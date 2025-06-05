@@ -88,7 +88,7 @@ class MergedNode:
             payload_len = int.from_bytes(hdr, 'big')
 
             ts_bytes = self._recv_all(self._in_conn, 8)
-            seq_bytes = self._recv_all(self._in_conn, 2)
+            seq_bytes = self._recv_all(self._in_conn, 4)
             t_start = time.time()
             raw = self._recv_all(self._in_conn, payload_len)
             t_end = time.time()
@@ -126,12 +126,12 @@ class MergedNode:
             print(f"[{t2:.4f}] Seq={seq}, Step2 wait latency={wait_latency:.3f} ms")
 
             # publish for RViz
-            msg = VizPack()
-            # use original timestamp
-            msg.header = Header(stamp=rospy.Time.from_sec(timestamp), frame_id='wifo_iq')
-            msg.seq = seq
-            msg.data_IQ = arr.tolist()
-            self._iq_pub.publish(msg)
+            # msg = VizPack()
+            # # use original timestamp
+            # msg.header = Header(stamp=rospy.Time.from_sec(timestamp), frame_id='wifo_iq')
+            # msg.seq = seq
+            # msg.data_IQ = arr.tolist()
+            # self._iq_pub.publish(msg)
 
             # Step3: inference
             t3_start = time.time()
@@ -146,8 +146,8 @@ class MergedNode:
             t4_start = time.time()
             res_raw = result.astype(np.int16).tobytes()
             length_bytes = len(res_raw).to_bytes(4, 'big')
-            ts_bytes = struct.pack('>d', timestamp)
-            seq_bytes = struct.pack('>H', seq)
+            ts_bytes = struct.pack('>d', timestamp) # 4-byte uint32
+            seq_bytes = struct.pack('>I', seq)
             self._out_conn.sendall(length_bytes + ts_bytes + seq_bytes + res_raw)
             t4_end = time.time()
             send_latency = (t4_end - t4_start) * 1000.0

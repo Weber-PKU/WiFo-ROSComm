@@ -114,7 +114,7 @@ def pkg_trans(server_host: str, server_port: int, tg: ToneGenerator):
             # header fields
             timestamp = time.time()
             ts_bytes = struct.pack('>d', timestamp)         # 8-byte big-endian double
-            seq_bytes = struct.pack('>H', seq_num & 0xFFFF) # 2-byte big-endian uint16
+            seq_bytes = struct.pack('>I', seq_num) # 2-byte big-endian uint16
             length_bytes = len(raw_array).to_bytes(4, 'big')
 
             # send in one shot

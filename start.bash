@@ -27,7 +27,7 @@ gnome-terminal --title="1 TRANS" -- bash -c "conda activate ros; python3 pkg_tra
 
 gnome-terminal --title="5 RCV" -- bash -c "conda activate ros; python3 pkg_rcv.py --host 0.0.0.0 --port 12346; exec bash"
 
-gnome-terminal --title="Viz" -- bash -c "source devel/setup.bash; rosrun wifo_processor rviz_pub.py; exec bash"
+# gnome-terminal --title="Viz" -- bash -c "source devel/setup.bash; rosrun wifo_processor rviz_pub.py; exec bash"
 
 
 

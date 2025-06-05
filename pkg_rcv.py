@@ -40,7 +40,7 @@ def pkg_rcv(server_host: str, server_port: int):
             payload_len = int.from_bytes(hdr, 'big')
 
             ts_bytes = recv_all(sock, 8)
-            seq_bytes = recv_all(sock, 2)
+            seq_bytes = recv_all(sock, 4)
             t1_start = time.time()
             raw = recv_all(sock, payload_len)
             t1_end = time.time()
